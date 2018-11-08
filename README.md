@@ -29,6 +29,9 @@ and send SNMP traps or informs:
                 else
                     console.log (varbinds[i].oid + " = " + varbinds[i].value);
         }
+
+        // If done, close the session
+        session.close ();
     });
 
     session.trap (snmp.TrapType.LinkDown, function (error) {
@@ -329,7 +332,8 @@ The `createSession()` function instantiates and returns an instance of the
         timeout: 5000,
         transport: "udp4",
         trapPort: 162,
-        version: snmp.Version1
+        version: snmp.Version1,
+        idBitsSize: 16
     };
     
     var session = snmp.createSession ("127.0.0.1", "public", options);
@@ -337,7 +341,6 @@ The `createSession()` function instantiates and returns an instance of the
 The optional `target` parameter defaults to `127.0.0.1`.  The optional
 `community` parameter defaults to `public`.  The optional `options` parameter
 is an object, and can contain the following items:
-
 
  * `port` - UDP port to send requests too, defaults to `161`
  * `retries` - Number of times to re-send a request, defaults to `1`
@@ -353,6 +356,12 @@ is an object, and can contain the following items:
  * `trapPort` - UDP port to send traps and informs too, defaults to `162`
  * `version` - Either `snmp.Version1` or `snmp.Version2c`, defaults to
    `snmp.Version1`
+ * `idBitsSize` - Either `16` or `32`, defaults to `32`.  Used to reduce the size
+    of the generated id for compatibility with some older devices.
+
+When a session has been finished with it should be closed:
+
+    session.close ();
 
 ## session.on ("close", callback)
 
@@ -1112,12 +1121,6 @@ ifTable (`1.3.6.1.2.1.2.2`) OID:
 
 Example programs are included under the modules `example` directory.
 
-# Bugs & Known Issues
-
-None, yet!
-
-Bug reports should be sent to <stephen.vickers.sv@gmail.com>.
-
 # Changes
 
 ## Version 1.0.0 - 14/01/2013
@@ -1254,20 +1257,25 @@ Bug reports should be sent to <stephen.vickers.sv@gmail.com>.
 
  * Replace asn1 dependancy with asn1-ber
 
-# Roadmap
+## Version 1.2.1 - 11/02/2018
 
-In no particular order:
+ * Add support of 16bit ids to help interoperate with older devices (added the
+   `idBitsSize` option to the `createSession()` function
+ * Add note to README.md that sessions should be closed when done with
 
- * Use a single UDP socket for multiple sessions?
- * SNMP agent (i.e. server)
- * SNMP trap/inform receiver
- * SNMP version 3
+## Version 1.2.3 - 06/06/2018
 
-Suggestions and requirements should be sent to <stephen.vickers.sv@gmail.com>.
+ * Set NoSpaceships Ltd to be the owner and maintainer
+
+## Version 1.2.4 - 07/06/2018
+
+ * Remove redundant sections from README.md
 
 # License
 
-Copyright (c) 2013 Stephen Vickers
+Copyright (c) 2018 NoSpaceships Ltd <hello@nospaceships.com>
+
+Copyright (c) 2013 Stephen Vickers <stephen.vickers.sv@gmail.com>
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -1286,7 +1294,3 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
-
-# Author
-
-Stephen Vickers <stephen.vickers.sv@gmail.com>
