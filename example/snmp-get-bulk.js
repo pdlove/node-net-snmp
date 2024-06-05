@@ -2,27 +2,12 @@
 // Copyright 2013 Stephen Vickers
 
 var snmp = require ("../");
+var options = require("./option-parser");
 
-if (process.argv.length < 7) {
-	console.log ("usage: snmp-get-bulk <target> <community> <non-rpts> "
-			+ "<max-reps> <oid> [<oid>...]");
-	process.exit (1);
-}
-
-var target = process.argv[2];
-var community = process.argv[3];
-
-var nonRepeaters = parseInt (process.argv[4])
-var maxRepetitions = parseInt (process.argv[5]);
-
-var oids = [];
-
-for (var i = 6; i < process.argv.length; i++)
-	oids.push (process.argv[i]);
-
-var options = {version: snmp.Version2c};
-
-var session = snmp.createSession (target, community, options);
+var session = options.session;
+var oids = options.oids;
+var nonRepeaters = options.nonRepeaters || 0;
+var maxRepetitions = options.maxRepetitions || 20;
 
 session.getBulk (oids, nonRepeaters, maxRepetitions, function (error,
 		varbinds) {
@@ -41,12 +26,12 @@ session.getBulk (oids, nonRepeaters, maxRepetitions, function (error,
 		}
 		
 		// then step through the repeaters which are varbind arrays
-		for (var i = nonRepeaters; i < varbinds.length; i++) {
-			for (var j = 0; j < varbinds[i].length; j++) {
-				if (snmp.isVarbindError (varbinds[i][j]))
-					console.error (snmp.varbindError (varbinds[i][j]));
+		for (var j = nonRepeaters; j < varbinds.length; j++) {
+			for (var k = 0; k < varbinds[j].length; k++) {
+				if (snmp.isVarbindError (varbinds[j][k]))
+					console.error (snmp.varbindError (varbinds[j][k]));
 				else
-					console.log (varbinds[i][j].oid + "|" + varbinds[i][j].value);
+					console.log (varbinds[j][k].oid + "|" + varbinds[j][k].value);
 			}
 		}
 	}
