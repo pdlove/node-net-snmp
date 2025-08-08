@@ -3,11 +3,11 @@
   "version": "3.11.2",
   "description": "JavaScript implementation of the Simple Network Management Protocol (SNMP)",
   "main": "index.js",
-  "module": "esm/index.mjs",
+  "module": "index.mjs",
   "exports": {
     ".": {
       "require": "./index.js",
-      "import": "./esm/index.mjs"
+      "import": "./index.mjs"
     }
   },
   "type": "commonjs",
