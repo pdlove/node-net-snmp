@@ -67,11 +67,11 @@ for each shown in this table:
 
 | Application | Common Use | Documentation |
 | ----------- | ---------- | ------------- |
-| Command Generator | NMS / SNMP tools | [Using This Module: Command & Notification Generator](#using-this-module-command--notification-generator) |
-| Command Responder | SNMP agents | [Using This Module: SNMP Agent](#using-this-module-snmp-agent) |
-| Notification Originator | SNMP agents / NMS-to-NMS notifications | [Using This Module: Command & Notification Generator](#using-this-module-command--notification-generator) |
-| Notification Receiver | NMS | [Using This Module: Notification Receiver](#using-this-module-notification-receiver) |
-| Proxy Forwarder | SNMP agents | [Forwarder Module](#forwarder-module) |
+| Command Generator | NMS / SNMP tools | [Application: Command & Notification Generator](#application-command--notification-generator) |
+| Command Responder | SNMP agents | [Application: SNMP Agent](#application-snmp-agent) |
+| Notification Originator | SNMP agents / NMS-to-NMS notifications | [Application: Command & Notification Generator](#application-command--notification-generator) |
+| Notification Receiver | NMS | [Application: Notification Receiver](#application-notification-receiver) |
+| Proxy Forwarder | SNMP agents | [Agent Forwarder Module](#agent-forwarder-module) |
 
 # Features
 
@@ -91,7 +91,7 @@ for each shown in this table:
  * SNMP proxy forwarder for agent
  * AgentX subagent
  * IPv4 and IPv6
- 
+
 # Standards Compliance
 
 This module aims to be fully compliant with the following RFCs:
@@ -258,6 +258,34 @@ Security Model RFC (RFC 3414); 128-bit AES for SNMPv3 was added later in RFC 382
 localization.  Cisco and a number of other vendors commonly use the "Reeder" key
 localization variant.  Other encryption algorithms are not supported.
 
+### Compatibility note on DES and recent Node.js versions
+
+When using SNMPv3 with DES as the privacy protocol (`snmp.PrivProtocols.des`) on Node.js v17 or later, you may encounter the following error:
+
+```
+"error": {
+        "library": "digital envelope routines",
+        "reason": "unsupported",
+        "code": "ERR_OSSL_EVP_UNSUPPORTED",
+        "message": "error:0308010C:digital envelope routines::unsupported",
+        "stack": ["Error: error:0308010C:digital envelope routines::unsupported",
+           "at Cipheriv.createCipherBase (node:internal/crypto/cipher:121:19)",
+        ...
+}
+```
+
+This occurs because newer versions of Node.js have deprecated support for the DES algorithm in OpenSSL for security reasons. 
+
+**Workaround:**
+If you need to communicate with legacy devices that only support DES for SNMPv3, you can run Node.js with the `--openssl-legacy-provider` flag:
+
+```bash
+node --openssl-legacy-provider your-app.js
+```
+
+Whenever possible, it's recommended to use more secure encryption methods like AES (`snmp.PrivProtocols.aes`) instead of DES.
+
+
 ## snmp.AgentXPduType
 
 The Agent Extensibility (AgentX) Protocol specifies these PDUs in RFC 2741:
@@ -316,7 +344,7 @@ Actions
 - `4 -  ECouldNotDecrypt`
 - `5 -  EAuthFailure`
 - `6 -  EReqResOidNoMatch`
-- `7 -  (no longer used)
+- `7 -  (no longer used)`
 - `8 -  EOutOfOrder`
 - `9 -  EVersionNoMatch`
 - `10 -  ECommunityNoMatch`
@@ -531,7 +559,7 @@ then it will produce a `ProcessingError` containing:
 * a `buffer` containing the packet contents, and
 * an `error` containing the original error encountered during processing.
 
-# Using This Module: Command & Notification Generator
+# Application: Command & Notification Generator
 
 This library provides a `Session` class to provide support for building
 "Command Generator" and "Notification Originator" SNMP applications.
@@ -560,7 +588,8 @@ var options = {
     version: snmp.Version1,
     backwardsGetNexts: true,
     reportOidMismatchErrors: false,
-    idBitsSize: 32
+    idBitsSize: 32,
+    dgramModule: dgram
 };
 
 var session = snmp.createSession ("127.0.0.1", "public", options);
@@ -592,6 +621,10 @@ is an object, and can contain the following items:
    requests and responses, defaults to `false`
  * `idBitsSize` - Either `16` or `32`, defaults to `32`.  Used to reduce the size
     of the generated id for compatibility with some older devices.
+ * `dgramModule` – A module that is interface-compatible with the Node.js [`dgram`](https://nodejs.org/api/dgram.html) module.
+    This can be used to extend or override the default UDP socket behavior by supplying
+    a custom or wrapped implementation of `dgram`.
+         
 
 When a session has been finished with it should be closed:
 
@@ -1448,7 +1481,7 @@ var maxRepetitions = 20;
 session.walk (oid, maxRepetitions, feedCb, doneCb);
 ```
 
-# Using This Module: Notification Receiver
+# Application: Notification Receiver
 
 RFC 3413 classifies a "Notification Receiver" SNMP application that receives
 "Notification-Class" PDUs. Notifications include both SNMP traps and informs.
@@ -1510,6 +1543,9 @@ an object, possibly empty, and can contain the following fields:
  addresses
  * `includeAuthentication` - adds the community (v1/2c) or user name (v3) information
  to the notification callback - defaults to `false`
+ * `sockets` - an array of objects containing triples of `transport`, `address` and `port` that
+ can be used to specify multiple socket listeners.  This option overrides any individual
+ `transport`, `address` and `port` options.
 
 The `callback` parameter is a callback function of the form
 `function (error, notification)`.  On an error condition, the `notification`
@@ -1551,11 +1587,14 @@ in the `rinfo` field.  For example:
 Returns the receiver's `Authorizer` instance, used to control access
 to the receiver.  See the `Authorizer` section for further details.
 
-## receiver.close ()
+## receiver.close (callback)
 
-Closes the receiver's listening socket, ending the operation of the receiver.
+Closes the receiver's listening socket(s), ending the operation of the receiver.  The optionnal
+`callback` parameter is a callback function of the form `function (socket)`, which will be
+called once for each socket that the receiver is listening on, after the socket is closed.
+The `socket` argument will be given as an object triple of `address`, `family` and `port`.
 
-# Using This Module: SNMP Agent
+# Application: SNMP Agent
 
 The SNMP agent responds to all four "request class" PDUs relevant to a Command Responder
 application:
@@ -1565,7 +1604,7 @@ application:
  * **GetBulkRequest** - request a series of "next" OID instances in the MIB tree
  * **SetRequest** - set values for specified OIDs
 
-The agent sends a **GetResponse** PDU to all four request PDU types, in conformance to RFC 3416.
+The agent sends a **GetResponse** PDU to all four request PDU types, in conformance with RFC 3416.
 
 The agent - like the notification receiver - maintains an `Authorizer` instance
 to control access to the agent, details of which are in the [Authorizer Module](#authorizer-module)
@@ -1592,7 +1631,8 @@ var options = {
     accessControlModelType: snmp.AccessControlModelType.None,
     engineID: "8000B98380XXXXXXXXXXXXXXXXXXXXXXXX", // where the X's are random hex digits
     address: null,
-    transport: "udp4"
+    transport: "udp4",
+    mibOptions: {}
 };
 
 var callback = function (error, data) {
@@ -1625,6 +1665,11 @@ an object, possibly empty, and can contain the following fields:
  * `transport` - the transport family to use - defaults to `udp4`
  * `address` - the IP address to bind to - default to `null`, which means bind to all IP
  addresses
+ * `sockets` - an array of objects containing triples of `transport`, `address` and `port` that
+ can be used to specify multiple socket listeners.  This option overrides any individual
+ `transport`, `address` and `port` options.
+ * `mibOptions` - a MIB options object that is passed to the `Mib` instance - see the MIB section
+ for further details on this - defaults to the empty object.
 
 The `mib` parameter is optional, and sets the agent's singleton `Mib` instance.
 If not supplied, the agent creates itself a new empty `Mib` singleton.  If supplied,
@@ -1651,9 +1696,12 @@ its existing `Mib` instance.
 Returns the agent's singleton `Forwarder` instance, which holds a list of registered
 proxies that specify context-based forwarding to remote hosts.
 
-## agent.close ()
+## agent.close (callback)
 
-Closes the agent's listening socket, ending the operation of the agent.
+Closes the agent's listening socket(s), ending the operation of the agent.  The optionnal
+`callback` parameter is a callback function of the form `function (socket)`, which will be
+called once for each socket that the agent is listening on, after the socket is closed.
+The `socket` argument will be given as an object triple of `address`, `family` and `port`.
 
 # Authorizer Module
 
@@ -1899,6 +1947,8 @@ var myScalarProvider = {
        // e.g. can update the MIB data before responding to the request here
        mibRequest.done ();
     }
+    // Note: handler is optional for scalar providers - if omitted, 
+    // mibRequest.done() is called automatically
 };
 var mib = agent.getMib ();
 mib.registerProvider (myScalarProvider);
@@ -2043,7 +2093,7 @@ constraints: {
     ]
 }
 ```
-## snmp.createMib ()
+## snmp.createMib (options)
 
 The `createMib()` function instantiates and returns an instance of the
 `Mib` class. The new Mib does not have any nodes (except for a single
@@ -2056,6 +2106,12 @@ might be useful are:
  * where you want to pre-populate a `Mib` instance with providers and scalar/tabular data
  before creating the `Agent` instance itself.
  * where you want to swap out an agent's existing `Mib` instance for an entirely new one.
+
+The `options` object is optional.  If supplied, a single key is supported:
+ * `addScalarDefaultsOnRegistration` - if `true`, automatically adds to the MIB a scalar with a
+ default value (`defVal`) in its provider definition upon registration of the provider.
+ The default value is `false`, which means the MIB is unchanged on registration of the provider,
+ even if a `defVal` is present in the provider definition.
 
 ## mib.registerProvider (definition)
 
@@ -2103,6 +2159,8 @@ objects`, below, for details.
  * `handler` *(optional)* - an optional callback function, which is called before the request to the
  MIB is made.  This could update the MIB value(s) handled by this provider.  If not given,
  the values are simply returned from (or set in) the MIB without any other processing.
+ If no `handler` is provided, the system automatically calls `mibRequest.done()` to complete 
+ the request, making both scalar and table providers fully functional without explicit handlers.
  The callback function takes a `MibRequest` instance, which has a `done()` function.  This
  must be called when finished processing the request.  To signal an error, give a single error object
  in the form of `{errorStatus: <status>}`, where `<status>` is a value from ErrorStatus e.g.
@@ -2391,7 +2449,7 @@ methods `Mib.setScalarDefaultValue` and `Mib.setTableRowDefaultValues`
 may be used to conveniently add defaults after the MIB files are
 loaded.
 
-# Using This Module: Module Store
+# Application: Module Store
 
 The library supports MIB parsing by providing an interface to a `ModuleStore` instance into which
 you can load MIB modules from files, and fetch the resulting JSON MIB module representations.
@@ -2438,10 +2496,32 @@ pre-loaded "base" modules is:
  * RFC1158-MIB
  * RFC-1212
  * RFC1213-MIB
+ * RFC-1215
  * SNMPv2-SMI
  * SNMPv2-CONF
  * SNMPv2-TC
  * SNMPv2-MIB
+
+By default, the `createModuleStore()` function creates a new `ModuleStore` instance with all the base modules pre-loaded. 
+However, you can now customize which base modules are loaded by passing an options object:
+
+```js
+// Example of selecting only SNMPv2 MIBs
+const store = snmp.createModuleStore({
+  baseModules: [
+    'SNMPv2-SMI',
+    'SNMPv2-CONF',
+    'SNMPv2-TC',
+    'SNMPv2-MIB',
+  ],
+});
+```
+
+The `options` object can contain:
+
+* `baseModules` - An array of module names to use as the base modules. This allows you to explicitly control which MIBs are loaded, which can be useful to avoid unexpected type overrides that might occur with the full set of base modules.
+
+This feature is helpful when dealing with constraints for SNMPv2-TC defined textual conventions like DisplayString that might get preempted by subsequent definitions as plain OCTET STRING in RFC MIBs.
 
 ## store.loadFromFile (fileName)
 
@@ -2501,7 +2581,7 @@ var namedOid = store.translate ('1.3.6.1.2.1.1.1', snmp.OidFormat.path);
     => 'iso.org.dod.internet.mgmt.mib-2.system.sysDescr'
 ```
 
-# Forwarder Module
+# Agent Forwarder Module
 
 An `Agent` instance, when created, in turn creates an instance of the `Forwarder` class.
 There is no direct API call to create a `Forwarder` instance; this creation is the
@@ -2523,7 +2603,7 @@ forwarder.addProxy({
         level: snmp.SecurityLevel.authNoPriv,
         authProtocol: snmp.AuthProtocols.sha,
         authKey: "quarryandgravel"
-    },
+    }
 });
 ```
 
@@ -2577,7 +2657,7 @@ Returns an object containing a list of all registered proxies, keyed by context 
 
 Prints a dump of all proxy definitions to the console.
 
-# Using This Module: AgentX Subagent
+# Application: AgentX Subagent
 
 The AgentX subagent implements the functionality specified in RFC 2741 to become a "subagent"
 of an AgentX "master agent".  The goal of AgentX is to extend the functionality of an existing
@@ -2628,6 +2708,79 @@ to both register the provider on its internal `Mib` object, *and* send a Registe
 agent for the provider's MIB region.  The latter step is skipped if registering the provider directly
 on the MIB object.
 
+## Simplified Provider Example
+
+AgentX subagents provide automatic request handling for both scalar and table providers, making them simple to implement:
+
+```js
+// Both scalars and tables work with automatic request handling (no explicit handlers needed)
+var stringProvider = {
+    name: "scalarString",
+    type: snmp.MibProviderType.Scalar,
+    oid: "1.3.6.1.4.1.8072.9999.9999.1",
+    scalarType: snmp.ObjectType.OctetString,
+    maxAccess: snmp.MaxAccess["read-write"]
+    // No handler required - automatic fallback will call mibRequest.done()
+};
+
+var intProvider = {
+    name: "scalarInt",
+    type: snmp.MibProviderType.Scalar,
+    oid: "1.3.6.1.4.1.8072.9999.9999.3",
+    scalarType: snmp.ObjectType.Integer,
+    maxAccess: snmp.MaxAccess["read-write"]
+    // No handler required - automatic fallback will call mibRequest.done()
+};
+
+// Table providers also work without explicit handlers
+var tableProvider = {
+    name: "smallIfTable",
+    type: snmp.MibProviderType.Table,
+    oid: "1.3.6.1.4.1.8072.9999.9999.2",
+    maxAccess: snmp.MaxAccess['not-accessible'],
+    tableColumns: [
+        {
+            number: 1,
+            name: "ifIndex",
+            type: snmp.ObjectType.Integer,
+            maxAccess: snmp.MaxAccess['read-only']
+        },
+        {
+            number: 2,
+            name: "ifDescr",
+            type: snmp.ObjectType.OctetString,
+            maxAccess: snmp.MaxAccess['read-write']
+        }
+    ],
+    tableIndex: [
+        {
+            columnName: "ifIndex"
+        }
+    ]
+    // No handler required - automatic fallback works for tables too!
+};
+
+// Register providers and set values
+subagent.registerProvider(stringProvider, function(error, data) {
+    if (!error) {
+        subagent.getMib().setScalarValue("scalarString", "Hello World!");
+    }
+});
+
+subagent.registerProvider(intProvider, function(error, data) {
+    if (!error) {
+        subagent.getMib().setScalarValue("scalarInt", 42);
+    }
+});
+
+subagent.registerProvider(tableProvider, function(error, data) {
+    if (!error) {
+        subagent.getMib().addTableRow("smallIfTable", [1, "lo"]);
+        subagent.getMib().addTableRow("smallIfTable", [2, "eth0"]);
+    }
+});
+```
+
 ## snmp.createSubagent (options)
 
 The `createSubagent ()` function instantiates and returns an instance of the `Subagent`
@@ -2639,7 +2792,9 @@ var options = {
     master: "localhost",
     masterPort: 705,
     timeout: 0,
-    description: "Node net-snmp AgentX sub-agent"
+    description: "Node net-snmp AgentX sub-agent",
+    mibOptions: {},
+    mib: undefined
 };
 
 subagent = snmp.createSubagent (options);
@@ -2654,6 +2809,12 @@ The `options` parameter is a mandatory object, possibly empty, and can contain t
  * `timeout` - set the session-wide timeout on the master agent - defaults to 0, which
  means no session-wide timeout is set.
  * `description` - a textual description of the subagent.
+ * `mibOptions` - n MIB options object that is passed to the `Mib` instance - see the MIB section
+ for further details on this - defaults to the empty object.
+ * `mib` - sets the agent's singleton `Mib` instance.  If not supplied, the agent creates itself
+ a new empty `Mib` singleton.  If supplied, the `Mib` instance needs to be created and populated as
+ per the [Mib Module](#mib-module) section.
+
 
 ## subagent.getMib ()
 
@@ -2679,6 +2840,11 @@ PDUs to the subagent.  The supplied `callback` is used only once, on reception o
 subsequent `Response` PDU from the master to the `Register` PDU.  This is not to be confused
 with the `handler` optional callback on the provider definition, which is invoked for any
 "request processing" PDU received by the subagent for MIB objects in the registered MIB region.
+
+**Note for AgentX subagents**: Neither scalar nor table providers require explicit `handler` functions.
+If no `handler` is provided, the subagent automatically calls `mibRequest.done()` to complete the request,
+allowing both scalar and table values to be served directly from the MIB without additional processing.
+This greatly simplifies provider definitions - you only need to specify the structure and `maxAccess` properties.
 
 ## subagent.unregisterProvider (name, callback)
 
@@ -2729,6 +2895,48 @@ two varbinds.  The supplied `callback` is called on reception of the subsequent
 Sends a "ping" to the master agent using a `Ping` PDU, to confirm that the master agent is still
 responsive.  The supplied `callback` is called on reception of the subsequent
 `Response` PDU from the master to the `Ping` PDU.
+
+## subagent.setBulkSetHandler (callback)
+
+Sets a bulk set handler for the subagent that will be called for both **TestSet** and **CommitSet** 
+phases of SNMP SET operations. This provides atomic validation capabilities, allowing you to validate 
+all varbinds as a complete set before committing any changes.
+
+The handler callback function receives two arguments:
+* `testSet` - A boolean indicating the phase: `true` for TestSet phase, `false` for CommitSet phase
+* `varbinds` - An array of all varbinds in the SET request
+
+During the TestSet phase (`testSet = true`), you should validate all the requested changes but not 
+apply them. During the CommitSet phase (`testSet = false`), you should apply the previously validated changes.
+
+Example usage:
+
+```js
+subagent.setBulkSetHandler(function(testSet, varbinds) {
+    if (testSet) {
+        // TestSet phase - validate all varbinds atomically
+        console.log("Validating SET operation with", varbinds.length, "varbinds");
+        for (let varbind of varbinds) {
+            // Perform validation logic here
+            if (!isValidValue(varbind.oid, varbind.value)) {
+                throw new Error("Invalid value for " + varbind.oid);
+            }
+        }
+        console.log("All varbinds validated successfully");
+    } else {
+        // CommitSet phase - apply the changes
+        console.log("Committing SET operation");
+        for (let varbind of varbinds) {
+            // Apply the validated changes here
+            applyValue(varbind.oid, varbind.value);
+        }
+        console.log("All changes committed");
+    }
+});
+```
+
+This approach ensures atomic SET operations where either all varbinds in a request succeed or all fail, 
+maintaining data consistency across your MIB implementation.
 
 ## subagent.on ("close", callback)
 
@@ -3370,6 +3578,124 @@ Example programs are included under the module's `example` directory.
 ## Version 3.11.2 - 03/04/2024
 
  * Add provider to MIB request
+
+## Version 3.12.0 - 28/06/2024
+
+ * Add multiple socket listener support for agent and receiver
+
+## Version 3.12.1 - 21/08/2024
+
+ * Fix SNMPv1 session walk infinite loop condition
+
+## Version 3.13.0 - 03/09/2024
+
+ * Add support for out-of-order MIB dependencies
+
+## Version 3.13.1 - 03/09/2024
+
+ * Add close callback for agent and receiver
+
+## Version 3.13.2 - 05/09/2024
+
+ * Fix AgentX signed integer writing
+
+## Version 3.14.0 - 10/09/2024
+
+ * Add support for SMIv1 defined types and TRAP-TYPE SMIv1 macro
+
+## Version 3.14.1 - 11/09/2024
+
+ * Add RFC-1215 to base MIB modules to provide TRAP-TYPE macro
+
+## Version 3.15.0 - 14/09/2024
+
+ * Change return of undefined or null MIB values to NoSuchInstance
+
+## Version 3.15.1 - 12/10/2024
+
+ * Fix bundler failure due to unnecessary string length assignment
+
+## Version 3.15.2 - 03/12/2024
+
+ * Change return of non-existing OIDs under table from NoSuchObject to NoSuchInstance
+
+## Version 3.15.3 - 04/12/2024
+
+ * Fix agent SNMP SetRequest for OIDs
+
+## Version 3.16.0 - 23/12/2024
+
+ * Add MIB object validation to set/add MIB API calls
+
+## Version 3.16.1 - 01/01/2025
+
+ * Fix loading of MIB directory paths with periods
+
+## Version 3.17.0 - 01/01/2025
+
+ * Relax validation of unknown object types
+
+## Version 3.18.0 - 06/01/2025
+
+ * Add MIB option to add scalar MIB object on scalar provider registration
+
+## Version 3.18.1 - 06/01/2025
+
+ * Add agent option key for MIB options
+
+## Version 3.18.2 - 06/01/2025
+
+ * Add conversion of scalar defVal enumeration name to number on assignment
+
+## Version 3.19.0 - 06/02/2025
+
+ * Remove deprecated isArray call and fix agent string constraints check
+
+## Version 3.19.1 - 03/03/2025
+
+ * Fix integer constraints check
+
+# Version 3.19.2 - 06/03/2025
+
+ * Fix integer and string constraints check on cast
+
+# Version 3.20.0 - 06/03/2025
+
+ * Fix set value for counter, gauge and unsigned integer types
+
+# Version 3.20.1 - 26/04/2025
+
+ * Update documentation with compatibility note on DES and recent Node.js versions
+
+# Version 3.21.0 - 26/04/2025
+
+ * Add AgentX subagent mib and mibOptions on initialization
+
+# Version 3.21.1 - 26/04/2025
+
+ * Add better defval type handling, improved debug handling and simple agent example
+
+# Version 3.21.2 - 27/04/2025
+
+ * Add custom base module list
+
+# Version 3.22.0 - 27/04/2025
+
+ * Fix incorrect SNMPv3 engineID handling
+
+ * Add custom base module list
+
+# Version 3.23.0 - 20/06/2025
+
+ * Add support for custom dgram module
+
+# Version 3.24.0 - 28/08/2025
+
+ * Improve USM error handling compliance with RFC 3414
+
+# Version 3.25.0 - 28/08/2025
+
+ * Add separate AgentX subagent TestSet and CommitSet phases
 
 # License
 

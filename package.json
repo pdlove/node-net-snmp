@@ -1,18 +1,16 @@
 {
   "name": "net-snmp",
-  "version": "3.11.2",
+  "version": "3.25.0",
   "description": "JavaScript implementation of the Simple Network Management Protocol (SNMP)",
+  "author": "Mark Abrahams <mark@abrahams.co.nz>",
+  "license": "MIT",
   "main": "index.js",
   "directories": {
     "example": "example"
   },
-  "dependencies": {
-    "asn1-ber": "^1.2.1",
-    "smart-buffer": "^4.1.0"
-  },
-  "devDependencies": {
-    "eslint": "^5.16.0",
-    "getopts": "*"
+  "scripts": {
+    "lint": "eslint . ./**/*.js",
+    "test": "node --openssl-legacy-provider ./node_modules/mocha/bin/mocha.js --exit"
   },
   "contributors": [
     {
@@ -44,9 +42,13 @@
     "monitor",
     "monitoring"
   ],
-  "author": "Mark Abrahams <mark@abrahams.co.nz>",
-  "license": "MIT",
-  "scripts": {
-    "lint": "./node_modules/.bin/eslint . ./**/*.js"
+  "dependencies": {
+    "asn1-ber": "^1.2.1",
+    "smart-buffer": "^4.1.0"
+  },
+  "devDependencies": {
+    "eslint": "^9.9.1",
+    "getopts": "^2.3.0",
+    "mocha": "^11.0.1"
   }
 }
